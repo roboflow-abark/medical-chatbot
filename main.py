@@ -8,7 +8,7 @@ load_dotenv()
 from graph.graph import app
 
 def main():
-    st.title("🩺MedMitra")
+    st.title("Medical Assistant")
     st.write("Ask any healthcare question.")
 
     # Input widget for the user to enter a question
