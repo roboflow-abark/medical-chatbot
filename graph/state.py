@@ -13,6 +13,8 @@ class GraphState(TypedDict, total=False):
         documents: List of documents retrieved.
         context: Combined context from retrieval or web search.
         context_source: Source of the context (e.g., 'Vector Store', 'Web Search').
+        generation_attempts: Number of times we have tried to generate an answer
+            during this run, used to prevent infinite retries.
     """
 
     question: str
@@ -21,3 +23,4 @@ class GraphState(TypedDict, total=False):
     documents: Optional[List[Any]] 
     context: Optional[str]
     context_source: Optional[str]
+    generation_attempts: Optional[int]

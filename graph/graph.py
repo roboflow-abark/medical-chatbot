@@ -30,6 +30,19 @@ def decide_to_generate(state):
 
 def grade_generation_grounded_in_documents_and_question(state: GraphState) -> str:
     print("---CHECK HALLUCINATIONS---")
+
+    # Track how many times we've tried to generate an answer in this run.
+    # This prevents infinite loops between GENERATE, WEBSEARCH, and this grader.
+    attempts = state.get("generation_attempts", 0) or 0
+    attempts += 1
+    state["generation_attempts"] = attempts
+    print(f"Generation attempts so far: {attempts}")
+
+    MAX_ATTEMPTS = 3
+    if attempts > MAX_ATTEMPTS:
+        print("---MAX GENERATION ATTEMPTS REACHED, ACCEPTING CURRENT ANSWER---")
+        return "useful"
+
     question = state["question"]
     documents = state["documents"]
     generation = state["generation"]

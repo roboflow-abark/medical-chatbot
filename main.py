@@ -6,64 +6,115 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from graph.graph import app
+from graph.chains.generation import generation_chain
 
 def main():
     st.title("Medical Assistant")
-    st.write("Ask any healthcare question.")
+    st.write(
+        "This assistant will first ask follow-up questions like a human clinician "
+        "to understand your situation before offering personalized guidance."
+    )
 
-    # Input widget for the user to enter a question
-    question = st.text_input("Please explain the symptoms in detail:", "")
+    # Initialize chat history in the Streamlit session
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-    if question:
-        inputs = {"question": question}
+    # Display existing conversation
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-        with st.spinner("Processing your question..."):
-            try:
-                # Initialize the state
-                state = {}
-                # Run the workflow using app.stream and collect outputs
-                for output in app.stream(inputs, config={"configurable": {"thread_id": "2"}}):
-                    # Update the state with the outputs
-                    state.update(output)
-                    print(f"Output from node: {output}")
-                    print(f"Updated state: {state}")
-                # Debug: print the final state
-                print(f"Final state: {state}")
-            except Exception as e:
-                st.error(f"An error occurred while processing your question: {e}")
-                return
+    # Chat-style user input
+    user_input = st.chat_input("Share how you're feeling or describe your symptoms:")
 
-        if state:
-            # Create two columns under the input field
-            col1, col2 = st.columns(2)
+    if user_input:
+        # Add the new user message to the history
+        st.session_state.messages.append({"role": "user", "content": user_input})
 
-            # Access the 'generate' node's outputs
-            generate_output = state.get('generate', {})
-            retrieve_output = state.get('retrieve', {})
+        # Build a conversation transcript to send into the graph
+        conversation_text_lines = []
+        for msg in st.session_state.messages:
+            speaker = "User" if msg["role"] == "user" else "Assistant"
+            conversation_text_lines.append(f"{speaker}: {msg['content']}")
+        conversation_text = "\n".join(conversation_text_lines)
 
-            # Display the answer in the left column
-            with col1:
-                st.subheader("Answer:")
-                generation = generate_output.get('generation')
-                if generation:
-                    st.write(generation)
-                else:
-                    st.warning("No generation output available.")
+        inputs = {"question": conversation_text}
 
-            # Display the context in the right column
-            with col2:
-                # Try to get context and source from 'generate' output first, then 'retrieve'
-                context = generate_output.get('context') or retrieve_output.get('context')
-                source = generate_output.get('context_source') or retrieve_output.get('context_source', "Unknown Source")
-                st.subheader(f"Context (Source: {source})")
-                if context:
-                    # Optionally, use an expander for long contexts
-                    with st.expander("Show Context"):
-                        st.write(context)
-                else:
-                    st.warning("No context available.")
-        else:
-            st.warning("No output available from the processing.")
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking about your situation..."):
+                try:
+                    state = {}
+                    # Run the workflow using app.stream and collect outputs
+                    for output in app.stream(
+                        inputs, config={"configurable": {"thread_id": "therapy-thread"}}
+                    ):
+                        state.update(output)
+                        print(f"Output from node: {output}")
+                        print(f"Updated state: {state}")
+                    print(f"Final state: {state}")
+
+                    # Access the 'generate' node's outputs
+                    generate_output = state.get("generate", {})
+                    retrieve_output = state.get("retrieve", {})
+
+                    generation = generate_output.get("generation")
+                    if not generation:
+                        generation = (
+                            "I'm sorry, I couldn't generate a helpful response right now. "
+                            "Please try adding a bit more detail or rephrasing your message."
+                        )
+
+                    # Show assistant reply in the chat bubble
+                    st.markdown(generation)
+
+                    # Append assistant message to session history
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": generation}
+                    )
+
+                    # Optionally show the underlying context used for the answer
+                    context = (
+                        generate_output.get("context")
+                        or retrieve_output.get("context")
+                        or state.get("context")
+                    )
+                    source = (
+                        generate_output.get("context_source")
+                        or retrieve_output.get("context_source")
+                        or state.get("context_source", "Unknown Source")
+                    )
+
+                    if context:
+                        with st.expander(
+                            f"Show medical information used (Source: {source})"
+                        ):
+                            st.write(context)
+
+                except Exception as e:
+                    # If the graph fails (e.g., recursion limit), fall back to a
+                    # single LLM call so the user still gets a response.
+                    print(f"Error while running graph workflow: {e}")
+                    try:
+                        fallback_answer = generation_chain.invoke(
+                            {"context": "", "question": conversation_text}
+                        )
+                        st.markdown(fallback_answer)
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": fallback_answer}
+                        )
+                    except Exception as inner_exc:
+                        print(f"Fallback generation also failed: {inner_exc}")
+                        st.error(
+                            "An error occurred while processing your question. "
+                            "Please try again in a moment."
+                        )
+
+    if not st.session_state.messages:
+        st.info(
+            "Start by briefly sharing what you're experiencing. "
+            "The assistant will respond with clarifying questions first, "
+            "then offer personalized guidance once it has enough information."
+        )
 
 if __name__ == "__main__":
     main()

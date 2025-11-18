@@ -16,8 +16,26 @@ def web_search(state: GraphState) -> Dict[str, Any]:
     docs = web_search_tool.invoke({"query": question})
     print(f"Web Search Results: {docs}")
 
-    # Extract content from the search results
-    web_results_content = [d["content"] for d in docs]
+    # Extract content from the search results.
+    # Tavily typically returns a list of dicts with a "content" field,
+    # but we defensively handle other shapes (single dict, string, etc.)
+    web_results_content = []
+
+    if isinstance(docs, list):
+        for d in docs:
+            if isinstance(d, dict) and "content" in d:
+                web_results_content.append(d["content"])
+            else:
+                # Fall back to string representation
+                web_results_content.append(str(d))
+    elif isinstance(docs, dict):
+        if "content" in docs:
+            web_results_content.append(docs["content"])
+        else:
+            web_results_content.append(str(docs))
+    else:
+        # docs is a string or some other primitive
+        web_results_content.append(str(docs))
 
     # Create Document objects from the content
     web_documents = [Document(page_content=content) for content in web_results_content]
